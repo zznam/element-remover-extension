@@ -1,51 +1,79 @@
-let autoRemoveInterval = null
-let currentSelector = ""
+let autoRemoveIntervals = {}
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "updateAutoRemove") {
-    updateAutoRemove(request.enabled, request.selector)
-    // Send response to confirm receipt
-    sendResponse({ status: 'success' })
+// Function to remove elements
+function removeElements(tabId, selector) {
+  chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    function: (selector) => {
+      const elements = document.querySelectorAll(selector)
+      elements.forEach((el) => el.remove())
+    },
+    args: [selector],
+  })
+}
+
+// Handle messages from popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "updateAutoRemove") {
+    if (message.isEnabled) {
+      // Get all tabs and set up auto-remove
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((tab) => {
+          if (tab.url.startsWith("http")) {
+            setupAutoRemove(tab.id, message.selector)
+          }
+        })
+      })
+    } else {
+      // Clear all intervals
+      Object.values(autoRemoveIntervals).forEach((interval) =>
+        clearInterval(interval)
+      )
+      autoRemoveIntervals = {}
+    }
   }
-  // Required for async response
-  return true
 })
 
-// Function to update auto-remove status
-function updateAutoRemove(enabled, selector) {
-  clearInterval(autoRemoveInterval)
-  autoRemoveInterval = null
-  currentSelector = selector
-
-  if (enabled) {
-    // Start auto-remove interval (every 3 seconds)
-    autoRemoveInterval = setInterval(() => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length > 0) {
-          // Check if tab is valid and not on chrome:// or edge:// pages
-          if (!tabs[0].url.startsWith('chrome://') && !tabs[0].url.startsWith('edge://')) {
-            chrome.tabs.sendMessage(
-              tabs[0].id,
-              { action: "removeElements", selector: currentSelector },
-              // Add error handling callback
-              (response) => {
-                if (chrome.runtime.lastError) {
-                  console.log('Error sending message:', chrome.runtime.lastError)
-                  // Content script might not be loaded, inject it
-                  chrome.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
-                    files: ['content.js']
-                  }).catch(err => console.log('Failed to inject content script:', err))
-                }
-              }
-            )
-          }
-        }
-      })
-    }, 3000)
+// Set up auto-remove for a specific tab
+function setupAutoRemove(tabId, selector) {
+  // Clear existing interval if any
+  if (autoRemoveIntervals[tabId]) {
+    clearInterval(autoRemoveIntervals[tabId])
   }
+
+  // Set new interval
+  autoRemoveIntervals[tabId] = setInterval(() => {
+    removeElements(tabId, selector)
+  }, 3000)
 }
+
+// Handle new tab creation
+chrome.tabs.onCreated.addListener((tab) => {
+  chrome.storage.sync.get(["isAutoRemoveEnabled", "selector"], (result) => {
+    if (result.isAutoRemoveEnabled && tab.url?.startsWith("http")) {
+      setupAutoRemove(tab.id, result.selector)
+    }
+  })
+})
+
+// Handle tab updates (URL changes)
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete") {
+    chrome.storage.sync.get(["isAutoRemoveEnabled", "selector"], (result) => {
+      if (result.isAutoRemoveEnabled && tab.url?.startsWith("http")) {
+        setupAutoRemove(tabId, result.selector)
+      }
+    })
+  }
+})
+
+// Clean up intervals when tabs are closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (autoRemoveIntervals[tabId]) {
+    clearInterval(autoRemoveIntervals[tabId])
+    delete autoRemoveIntervals[tabId]
+  }
+})
 
 // When extension is installed or updated
 chrome.runtime.onInstalled.addListener(() => {
@@ -68,4 +96,3 @@ chrome.runtime.onStartup.addListener(() => {
     }
   })
 })
-

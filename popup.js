@@ -10,7 +10,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load saved settings
   chrome.storage.sync.get(["selector", "autoRemove", "darkMode"], (data) => {
     if (data.selector) selectorInput.value = data.selector
-    if (data.autoRemove !== undefined) autoRemoveToggle.checked = data.autoRemove
+    if (data.autoRemove !== undefined)
+      autoRemoveToggle.checked = data.autoRemove
 
     // Apply theme based on Chrome storage
     updateTheme(data.darkMode)
@@ -20,8 +21,8 @@ document.addEventListener("DOMContentLoaded", () => {
   })
 
   // Theme toggle button click handler
-  themeToggle.addEventListener('click', () => {
-    const isDark = document.body.getAttribute('data-theme') === 'dark'
+  themeToggle.addEventListener("click", () => {
+    const isDark = document.body.getAttribute("data-theme") === "dark"
     const newTheme = !isDark // Toggle the theme
 
     // Save theme preference to Chrome storage
@@ -43,15 +44,39 @@ document.addEventListener("DOMContentLoaded", () => {
     "after:rounded-full",
     "after:h-5",
     "after:w-5",
-    "after:transition-all",
+    "after:transition-all"
   )
 
-  autoRemoveToggle.addEventListener("change", function () {
-    if (this.checked) {
-      toggleBg.classList.add("bg-blue-600", "after:translate-x-full", "after:border-white")
+  autoRemoveToggle.addEventListener("change", function (e) {
+    const isAutoRemoveEnabled = e.target.checked
+    const selector = document.getElementById("selector").value
+
+    // Store settings in Chrome storage
+    chrome.storage.sync.set({
+      isAutoRemoveEnabled: isAutoRemoveEnabled,
+      selector: selector,
+    })
+
+    // Send message to background script to update auto-remove state
+    chrome.runtime.sendMessage({
+      type: "updateAutoRemove",
+      isEnabled: isAutoRemoveEnabled,
+      selector: selector,
+    })
+
+    if (isAutoRemoveEnabled) {
+      toggleBg.classList.add(
+        "bg-blue-600",
+        "after:translate-x-full",
+        "after:border-white"
+      )
       toggleBg.classList.remove("bg-gray-300", "dark:bg-gray-600")
     } else {
-      toggleBg.classList.remove("bg-blue-600", "after:translate-x-full", "after:border-white")
+      toggleBg.classList.remove(
+        "bg-blue-600",
+        "after:translate-x-full",
+        "after:border-white"
+      )
       toggleBg.classList.add("bg-gray-300", "dark:bg-gray-600")
     }
 
@@ -83,7 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
           } else {
             statusDiv.textContent = "Error: Could not remove elements"
           }
-        },
+        }
       )
     })
   })
@@ -107,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Function to update theme and icons
   function updateTheme(isDark) {
     // Update data-theme attribute
-    document.body.setAttribute('data-theme', isDark ? 'dark' : 'light')
+    document.body.setAttribute("data-theme", isDark ? "dark" : "light")
 
     // Update icons
     updateThemeIcons(isDark)
@@ -116,12 +141,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // Helper function to update theme icons
   function updateThemeIcons(isDark) {
     if (isDark) {
-      darkIcon.classList.remove('hidden')
-      lightIcon.classList.add('hidden')
+      darkIcon.classList.remove("hidden")
+      lightIcon.classList.add("hidden")
     } else {
-      darkIcon.classList.add('hidden')
-      lightIcon.classList.remove('hidden')
+      darkIcon.classList.add("hidden")
+      lightIcon.classList.remove("hidden")
     }
   }
-})
 
+  // Load saved state when popup opens
+  document.addEventListener("DOMContentLoaded", function () {
+    chrome.storage.sync.get(
+      ["isAutoRemoveEnabled", "selector"],
+      function (result) {
+        if (result.isAutoRemoveEnabled) {
+          document.getElementById("auto-remove").checked = true
+        }
+        if (result.selector) {
+          document.getElementById("selector").value = result.selector
+        }
+      }
+    )
+  })
+})
